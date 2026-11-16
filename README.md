@@ -57,31 +57,31 @@ All credit for the original research belongs to those authors. See the companion
 
 The loader runs across three cooperating processes to break up the behavioral signature and keep each process's touch on the target minimal:
 
-### 1. Grandparent ([`GrandparentMain`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#LTODO))
+### 1. Grandparent ([`GrandparentMain`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L1929))
 
 Launches with no arguments. Does **all** target discovery:
 
 1. `NtQuerySystemInformation(SystemProcessInformation)` + `SystemExtendedHandleInformation` to enumerate processes, threads, and duplicatable handles.
 2. For each candidate process: steals a `TpWorkerFactory` handle, resolves the `_TP_POOL` VA via `NtQueryInformationWorkerFactory(WorkerFactoryBasicInformation)`, walks `TP_POOL.PoolObjectList` looking for a reachable `TP_IO` / `TP_ALPC` / `TP_JOB`, steals an `IoCompletion` handle, confirms at least one `WrQueue` thread is a genuine TPP worker (`ntdll!TppWorkerThread` as its `Win32StartAddress`), and finally scans the target's VA for a reusable `PAGE_EXECUTE_READWRITE` region of at least the wrapped-payload size.
 
-3. Spawns the Writer via `NtCreateUserProcess` with [MITIGATION_POLICY_HARDENED](TODO) (if [SPAWN_HARDENED_CHILDREN](TODO) is enabled) and `PS_ATTRIBUTE_HANDLE_LIST` carrying the three stolen handles (`hProcess`, `hThread`, `hIoCompletion`, all with `OBJ_INHERIT`).
+3. Spawns the Writer via `NtCreateUserProcess` with `MITIGATION_POLICY_HARDENED` (if [`SPAWN_HARDENED_CHILDREN`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L14) is enabled) and `PS_ATTRIBUTE_HANDLE_LIST` carrying the three stolen handles (`hProcess`, `hThread`, `hIoCompletion`, all with `OBJ_INHERIT`).
 
 The chosen target is handed to the Writer as a 13-slot argv payload: PIDs, inherited handle values, `&TP_DIRECT`, `&TP_DIRECT.Callback`, the original Callback value, matched object kind, the RWX-reuse flag, and the reused RWX base (if any).
 
-### 2. Writer ([`WriterChildMain`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#LTODO))
+### 2. Writer ([`WriterChildMain`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L2008))
 
-Repopulates `g_tpInjectTarget` from argv - no scan of its own - and then:
+Repopulates `g_tpInjectTarget` from argv, and then:
 
 1. Composes the wrapped payload in local memory: `[restore stub (0x23 bytes with embedded data slot)] [polymorphic x64 cmd.exe shellcode] [8-byte Callback-patch pointer]`.
 2. Patches both of the restore stub's data slots: the original `TP_DIRECT.Callback` value (at stub `+0x00`) and the absolute address of `&TP_DIRECT.Callback` (as the `imm64` of `mov rcx, imm64` at stub `+0x16`).
-3. Either reuses the RWX region Grandparent found, or allocates a fresh granularity-sized region as `PAGE_READWRITE` via [`AllocateVirtualMemory`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#LTODO) & [`FindSuitableAddress`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#LTODO).
+3. Either reuses the RWX region Grandparent found, or allocates a fresh granularity-sized region as `PAGE_READWRITE` via [`AllocateVirtualMemory`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L1145) & [`FindSuitableAddress`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L1063).
 4. Plants the Callback-patch pointer (= `pAllocatedAddress + RESTORE_STUB_ENTRY_OFFSET` = stub `+0x08`) at the tail of the local wrapped buffer, so the Flipper never needs it in its own address space.
-5. Delivers the full wrapped payload into the target via **Thread Name-Calling** ([`WriteMemoryViaThreadNameApc`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#LTODO)).
+5. Delivers the full wrapped payload into the target via **Thread Name-Calling** ([`WriteMemoryViaThreadNameApc`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L1371)).
 6. Spawns the Flipper with the same three handles re-inherited one level deeper, and the chosen RWX mode in its argv.
 
-### 3. Flipper ([`FlipperChildMain`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#LTODO))
-
-Repopulates `g_tpInjectTarget` from argv and performs the hijack ([`HijackTpDirectCallback`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#LTODO)):
+### 3. Flipper ([`FlipperChildMain`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L2136))
+ 
+Repopulates `g_tpInjectTarget` from argv and performs the hijack ([`HijackTpDirectCallback`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L1780)):
 
 1. Queues an in-target `RtlMoveMemory` APC that copies the 8-byte Callback-patch pointer from the tail of the payload region into `g_tpInjectTarget.pTpDirectCallbackVA`. The Flipper never fetches the pointer value into its own memory.
 2. If the Writer allocated fresh, flips the region from `PAGE_READWRITE` to `PAGE_EXECUTE_READWRITE` via `NtProtectVirtualMemory`. **Skipped on the RWX-reuse path**, since the region is already executable.
@@ -105,7 +105,7 @@ Many real target processes already contain `PAGE_EXECUTE_READWRITE` regions in t
 - Managed runtimes that generate stubs at load time
 - Game engines, scripting hosts, interactive loaders
 
-The RWX region scanner ([`FindRwxRegionInTarget`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#LTODO)) walks the target's user-mode VA via `NtQueryVirtualMemory(MemoryBasicInformation)` and returns the first region that satisfies our [search logic](#LTODO).
+The RWX region scanner ([`FindRwxRegionInTarget`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L350)) walks the target's user-mode VA via `NtQueryVirtualMemory(MemoryBasicInformation)` and returns the first region that satisfies our [search logic](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L377).
 
 
 If any candidate process satisfies this *in addition to* every other target-discovery gate, that process wins the scan immediately and the loader takes the reuse path. Writer skips `NtAllocateVirtualMemory` and uses the found base directly as its destination. Flipper skips `NtProtectVirtualMemory` since the region is already executable.
@@ -113,10 +113,6 @@ If any candidate process satisfies this *in addition to* every other target-disc
 ### Fallback behavior
 
 If no process passes both the discovery gates and the RWX scan, the scanner falls back to the first candidate that passed the discovery gates alone. That candidate is stashed as the loader walks the rest of the process list looking for an RWX winner; if the walk finishes without one, the fallback is promoted and Writer takes the classic allocate-then-flip path.
-
-### Caveats
-
-Reusing an RWX region means overwriting bytes somewhere inside a live JIT code cache or similar hot region. If the target writes into that same region concurrently (e.g., the .NET runtime emits a new stub while the payload executes), the loader can corrupt the target or vice-versa. The reuse path is best-case stealthy and worst-case destabilizing; `REUSE_RWX_REGIONS` can be set to `FALSE` at the top of [Main.c](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#LTODO) to force the classic path on every run.
 
 <br>
 
@@ -143,7 +139,7 @@ The TPP-worker filter (gate g) is important: `WaitReason=WrQueue` matches any th
 
 ## The Restore Stub
 
-The restore stub ([`g_RestoreStubTemplate`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#LTODO), 0x23 bytes) is register-agnostic by design - the TPP dispatcher calls it with different ABIs depending on the object kind, so the stub reads only from fixed PE-relative data slots inside its own payload:
+The restore stub ([`g_RestoreStubTemplate`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L1720), 0x23 bytes) is register-agnostic by design - the TPP dispatcher calls it with different ABIs depending on the object kind, so the stub reads only from fixed PE-relative data slots inside its own payload:
 
 ```
 [+0x00..+0x07] Data slot: original TP_DIRECT.Callback value   (patched by EmitRestoreStub)
@@ -158,7 +154,8 @@ The restore stub ([`g_RestoreStubTemplate`](https://github.com/Maldev-Academy/Wh
 [+0x23]        (payload falls through here)
 ```
 
-Both runtime-dependent slots (the original Callback value at `+0x00`, and the `&TP_DIRECT.Callback` `imm64` at `+0x16`) are patched in by [`EmitRestoreStub`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#LTODO) in the Writer, before the buffer is delivered via TNC.
+Both runtime-dependent slots (the original Callback value at `+0x00`, and the `&TP_DIRECT.Callback` `imm64` at `+0x16`) are patched in by [`EmitRestoreStub`](https://github.com/Maldev-Academy/WhisperLoader/blob/main/WhisperLoader/Main.c#L1748) in the Writer, before the buffer is delivered via TNC.
+
 
 <br>
 
