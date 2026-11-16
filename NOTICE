@@ -1,0 +1,100 @@
+WhisperLoader
+Copyright 2026 MalDev Academy (@NUL0x4C | @mrd0x)
+https://maldevacademy.com
+
+This project is developed and maintained by MalDev Academy as part of
+its Windows internals and offensive security coursework.
+
+================================================================================
+Composition
+================================================================================
+
+WhisperLoader combines two prior MalDev Academy projects into a single
+3-process loader with an added RWX region-reuse optimization:
+
+  - WhisperHijack (Apache License, Version 2.0)
+    Copyright 2026 MalDev Academy
+    https://github.com/Maldev-Academy/WhisperHijack
+
+    Provides the Thread Name-Calling (TNC) payload delivery primitive
+    and the granularity-based target allocation path.
+
+  - TpDirectCallbackHijack (Apache License, Version 2.0)
+    Copyright 2026 MalDev Academy
+    https://github.com/Maldev-Academy/TpDirectCallbackHijack
+
+    Provides the TP_DIRECT.Callback hijack execution primitive, the
+    pool-object walker, the TP_IO / TP_ALPC / TP_JOB internal structure
+    layouts, and the per-run restore stub.
+
+Files carried over from these projects retain their original Apache 2.0
+headers alongside the WhisperLoader notice.
+
+================================================================================
+Techniques - Original Research
+================================================================================
+
+The techniques combined in this project were originally described by:
+
+  - hasherezade (Check Point Research)
+    Thread Name-Calling (July 2024)
+    https://research.checkpoint.com/2024/thread-name-calling-using-thread-name-for-offense/
+
+  - Alon Leviev (SafeBreach Labs)
+    "The Pool Party You Will Never Forget: New Process Injection Techniques
+    Using Windows Thread Pools" (Black Hat EU 2023)
+    https://github.com/SafeBreach-Labs/PoolParty
+    https://www.safebreach.com/blog/process-injection-using-windows-thread-pools/
+
+    The TP_DIRECT.Callback hijack primitive, the TP_IO / TP_ALPC / TP_JOB
+    object kinds, and the NtSetIoCompletion dispatch trigger all originate
+    from the Pool Party research. The specific primitive implemented here
+    (walking a victim's live TP_POOL.PoolObjectList and hijacking an
+    existing pool object's embedded TP_DIRECT.Callback in place, rather
+    than inserting a new TP_<kind> structure, with a per-run restore stub)
+    is not one of the eight originally published variants.
+
+All credit for the original research belongs to hasherezade / Check Point
+Research and to Alon Leviev / SafeBreach Labs.
+
+Thread pool internal structure layouts (TP_POOL, TPP_CLEANUP_GROUP_MEMBER,
+TP_IO, TP_ALPC, TP_JOB, TP_DIRECT) were reconstructed from WinDbg "dt"
+output against ntdll shipped with the Windows 10 and Windows 11 builds
+listed in InternalStructures.h.
+
+================================================================================
+Third-Party Software
+================================================================================
+
+This product includes software from the following third-party projects:
+
+--------------------------------------------------------------------------------
+ApiHashing (MIT License)
+Copyright (c) 2026 MalDev Academy
+https://github.com/Maldev-Academy/ApiHashing
+
+Used for the hashed-import resolver and EAF bypass.
+
+--------------------------------------------------------------------------------
+ApiSet (MIT License)
+Copyright (c) 2017-2019 Aidan Khoury
+https://github.com/ajkhoury/ApiSet
+
+Portions of API Set resolution structures and traversal logic are
+incorporated transitively via ApiHashing.
+
+--------------------------------------------------------------------------------
+AlphabeticalPolyShellGen (MIT License)
+Copyright (c) 2026 MalDev Academy
+https://github.com/Maldev-Academy/AlphabeticalPolyShellGen
+
+Used to generate the embedded alphabetical polymorphic x64 cmd.exe
+shellcode from a raw shellcode binary.
+
+================================================================================
+Redistribution
+================================================================================
+
+Any redistribution, modification, or derivative work of this software must
+retain this notice in a readable form, as required by Section 4(d) of the
+Apache License, Version 2.0.
